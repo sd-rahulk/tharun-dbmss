@@ -1,0 +1,54 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { ArrowRight, BusFront, CheckCircle2, Clock3, TrainFront } from 'lucide-react';
+import { Badge, Button, Panel } from './ui';
+
+type Stop = { city_id: string; bus_stop: string; near: string };
+type Result = { schedule_id:string; departure_date:string; departure_time:string; route_id:string; route_description:string; mode:string; duration:number; reg_no:string; capacity:number; subtype:string; boarding_stop:string; destination_stop:string; boarding_sequence:number; destination_sequence:number; fare_minor:number; remaining_capacity:number };
+
+function tomorrow() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0,10); }
+function money(minor:number) { return new Intl.NumberFormat('en-IN', { style:'currency', currency:'INR', maximumFractionDigits:0 }).format(minor / 100); }
+
+export function JourneySearch({ stops, canBook = false }: { stops: Stop[]; canBook?: boolean }) {
+  const [from, setFrom] = useState(stops[0]?.city_id || '');
+  const [to, setTo] = useState(stops[1]?.city_id || '');
+  const [date, setDate] = useState(tomorrow());
+  const [mode, setMode] = useState<'ALL'|'BUS'|'METRO'>('ALL');
+  const [results, setResults] = useState<Result[]>([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [active, setActive] = useState<string | null>(null);
+  const [quantity, setQuantity] = useState(1);
+
+  const stopName = useMemo(() => new Map(stops.map((stop) => [stop.city_id, stop.bus_stop])), [stops]);
+  async function submit(event: React.FormEvent) {
+    event.preventDefault(); setLoading(true); setError(''); setMessage('');
+    const response = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ from, to, date, mode }) });
+    const payload = await response.json();
+    if (!response.ok) setError(payload.error || 'Search failed.'); else setResults(payload.results);
+    setLoading(false);
+  }
+  async function book(result: Result) {
+    setLoading(true); setError(''); setMessage('');
+    const response = await fetch('/api/bookings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ scheduleId: result.schedule_id, boardingCityId: from, destinationCityId: to, quantity, seats: [], paymentMethod:'SIMULATED_CARD' }) });
+    const payload = await response.json();
+    if (!response.ok) setError(payload.error || 'Booking failed.'); else { setMessage(`Booking ${payload.booking.bookingReference} confirmed. Ticket ${payload.booking.tickets[0]} issued.`); setActive(null); }
+    setLoading(false);
+  }
+
+  return <div className="space-y-5">
+    <form onSubmit={submit} className="grid gap-3 rounded-2xl border border-black/10 bg-white p-4 shadow-panel md:grid-cols-[1fr_1fr_170px_150px_auto] md:items-end">
+      <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-[.12em] text-black/45">Boarding stop</span><select value={from} onChange={(e)=>setFrom(e.target.value)} className="h-12 w-full rounded-xl border border-black/10 bg-paper px-3 text-sm"><option value="">Choose a stop</option>{stops.map((s)=><option key={s.city_id} value={s.city_id}>{s.bus_stop}</option>)}</select></label>
+      <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-[.12em] text-black/45">Destination</span><select value={to} onChange={(e)=>setTo(e.target.value)} className="h-12 w-full rounded-xl border border-black/10 bg-paper px-3 text-sm"><option value="">Choose a stop</option>{stops.map((s)=><option key={s.city_id} value={s.city_id}>{s.bus_stop}</option>)}</select></label>
+      <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-[.12em] text-black/45">Travel date</span><input type="date" min={new Date().toISOString().slice(0,10)} value={date} onChange={(e)=>setDate(e.target.value)} className="h-12 w-full rounded-xl border border-black/10 bg-paper px-3 text-sm" /></label>
+      <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-[.12em] text-black/45">Service</span><select value={mode} onChange={(e)=>setMode(e.target.value as 'ALL'|'BUS'|'METRO')} className="h-12 w-full rounded-xl border border-black/10 bg-paper px-3 text-sm"><option value="ALL">All services</option><option value="BUS">Bus / minibus</option><option value="METRO">Metro</option></select></label>
+      <Button type="submit" disabled={loading || !from || !to}>{loading ? 'Searching' : 'Find services'} <ArrowRight size={16} /></Button>
+    </form>
+    {error && <div role="alert" className="rounded-xl bg-[#f5dcd7] px-4 py-3 text-sm font-semibold text-[#8d3b30]">{error}</div>}
+    {message && <div role="status" className="flex items-center gap-2 rounded-xl bg-[#e0eee7] px-4 py-3 text-sm font-semibold text-signal"><CheckCircle2 size={17} /> {message}</div>}
+    {results.length > 0 && <div className="space-y-3" aria-live="polite"><div className="flex items-center justify-between"><p className="text-sm font-semibold text-black/60">{results.length} direct services · {stopName.get(from)} to {stopName.get(to)}</p><span className="text-xs text-black/45">Capacity is live from SQLite bookings</span></div>{results.map((result) => <Panel key={result.schedule_id} className="overflow-hidden"><div className="grid gap-5 p-5 md:grid-cols-[1.3fr_1fr_auto] md:items-center"><div><div className="flex items-center gap-2">{result.mode === 'METRO' ? <TrainFront size={18} className="text-transit" /> : <BusFront size={18} className="text-ember" />}<Badge tone={result.mode === 'METRO' ? 'blue' : 'amber'}>{result.mode === 'METRO' ? 'Metro train' : result.subtype === 'MINI_BUS' ? 'Mini bus' : 'Bus'}</Badge><span className="font-mono text-xs text-black/40">{result.schedule_id}</span></div><p className="display mt-3 text-2xl font-semibold">{result.departure_time} <span className="text-black/35">→</span> {result.destination_stop}</p><p className="mt-1 text-sm text-black/55">{result.route_description} · {result.reg_no}</p></div><div className="grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs uppercase tracking-[.12em] text-black/40">Duration</p><p className="mt-1 flex items-center gap-1 font-semibold"><Clock3 size={14} /> {result.duration} min</p></div><div><p className="text-xs uppercase tracking-[.12em] text-black/40">Fare</p><p className="mt-1 font-semibold">{money(result.fare_minor)}</p></div><div><p className="text-xs uppercase tracking-[.12em] text-black/40">Remaining</p><p className="mt-1 font-semibold text-signal">{result.remaining_capacity} seats</p></div><div><p className="text-xs uppercase tracking-[.12em] text-black/40">Stops</p><p className="mt-1 font-semibold">{result.boarding_sequence} → {result.destination_sequence}</p></div></div><div className="md:text-right">{canBook ? <Button onClick={()=>setActive(result.schedule_id)}>Book this service</Button> : <Link href="/login" className="inline-flex min-h-11 items-center justify-center rounded-full bg-ink px-5 text-sm font-semibold text-white hover:bg-transit">Sign in to book</Link>}</div></div>{active === result.schedule_id && canBook && <div className="border-t border-black/10 bg-paper p-4"><div className="flex flex-wrap items-end gap-3"><label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-[.12em] text-black/45">Passengers</span><select value={quantity} onChange={(e)=>setQuantity(Number(e.target.value))} className="h-11 rounded-xl border border-black/10 bg-white px-3 text-sm">{Array.from({length: Math.min(8, result.remaining_capacity)}, (_, i)=><option key={i+1} value={i+1}>{i+1}</option>)}</select></label><Button onClick={()=>book(result)} disabled={loading} variant="ember">{loading ? 'Confirming' : 'Pay simulated fare & confirm'}</Button><button type="button" onClick={()=>setActive(null)} className="px-3 text-sm font-semibold text-black/50 hover:text-ink">Keep browsing</button></div><p className="mt-3 text-xs text-black/45">Payment is simulated. No card details are collected; the server creates the booking, ticket, trip, and payment in one SQLite transaction.</p></div>}</Panel>)}</div>}
+  </div>;
+}

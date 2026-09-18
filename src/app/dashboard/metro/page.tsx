@@ -1,0 +1,6 @@
+import { redirect } from 'next/navigation';
+import { getDb } from '@/lib/db';
+import { getSessionUser } from '@/lib/auth';
+import { OperationsTable } from '@/components/operations-table';
+export const dynamic='force-dynamic';
+export default function MetroPage() { const user=getSessionUser(); if(!user||!['ADMIN','STAFF'].includes(user.role)) redirect('/dashboard'); const rows=getDb().prepare(`SELECT v.vehicle_id,v.reg_no,v.capacity,mt.no_of_coaches,mt.system_type,COUNT(s.schedule_id) AS scheduled_services FROM vehicle v JOIN metro_train mt ON mt.vehicle_id=v.vehicle_id LEFT JOIN schedule s ON s.vehicle_id=v.vehicle_id AND s.status='SCHEDULED' GROUP BY v.vehicle_id ORDER BY v.vehicle_id`).all() as Array<any>; return <div className="space-y-8"><div><p className="eyebrow">Dedicated metro control</p><h1 className="display mt-3 text-5xl font-semibold">Metro services.</h1><p className="mt-3 text-sm leading-6 text-black/55">Metro trains are concrete EER `METRO_TRAIN` vehicles. They do not enter the original operational BUS relation.</p></div><OperationsTable eyebrow="Metro train subtype" title="Coach and capacity view" columns={['vehicle_id','reg_no','capacity','no_of_coaches','system_type','scheduled_services']} rows={rows}/></div>; }

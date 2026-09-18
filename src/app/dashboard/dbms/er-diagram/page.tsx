@@ -1,0 +1,4 @@
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
+import { ErDiagram } from '@/components/dbms-diagrams';
+export default function ErDiagramPage() { return <div className="space-y-8"><Link href="/dashboard/dbms" className="inline-flex items-center gap-2 text-sm font-semibold text-black/50 hover:text-transit"><ArrowLeft size={16}/> DBMS studio</Link><div><p className="eyebrow">Conceptual model · academic foundation</p><h1 className="display mt-3 text-5xl font-semibold">ER diagram.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-black/55">This is the original ER model translated into a readable, interactive-style view. Ordered stops and transactional booking tables are implementation extensions and are kept separate from this conceptual layer.</p></div><ErDiagram /></div>; }

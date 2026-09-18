@@ -1,0 +1,5 @@
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
+import { AuthForm } from '@/components/auth-form';
+
+export default function LoginPage() { return <main className="grain grid min-h-screen place-items-center px-6 py-10"><div className="w-full max-w-md"><Link href="/" className="mb-12 inline-flex items-center gap-2 text-sm font-semibold text-black/50 hover:text-transit"><ArrowLeft size={16} /> Back to public network</Link><div className="rounded-3xl border border-black/10 bg-white/75 p-7 shadow-lift sm:p-10"><p className="eyebrow">Passenger and operations access</p><h1 className="display mt-4 text-4xl font-semibold">Welcome back.</h1><p className="mt-3 text-sm leading-6 text-black/55">Use a seeded role account or your registered passenger profile.</p><div className="mt-8"><AuthForm mode="login" /></div><div className="mt-8 border-t border-black/10 pt-5 text-xs leading-5 text-black/45">Demo: admin@transit.local / Admin@123<br />Passenger: passenger@transit.local / Passenger@123</div></div></div></main>; }
