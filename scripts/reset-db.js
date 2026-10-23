@@ -1,15 +1,28 @@
-const fs = require('fs');
-const path = require('path');
-const Database = require('better-sqlite3');
+const path = require('node:path');
+const postgres = require('postgres');
 
-const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'transit.db');
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-if (fs.existsSync(dbPath)) fs.rmSync(dbPath, { force: true });
-if (fs.existsSync(`${dbPath}-wal`)) fs.rmSync(`${dbPath}-wal`, { force: true });
-if (fs.existsSync(`${dbPath}-shm`)) fs.rmSync(`${dbPath}-shm`, { force: true });
-const db = new Database(dbPath);
-db.pragma('foreign_keys = ON');
-db.pragma('journal_mode = WAL');
-db.exec(fs.readFileSync(path.join(process.cwd(), 'database', 'schema.sql'), 'utf8'));
-db.close();
-console.log(`Database reset at ${dbPath}`);
+const connectionString = process.env.SUPABASE_DB_URL;
+if (!connectionString) {
+  throw new Error('SUPABASE_DB_URL is required.');
+}
+if (process.env.CONFIRM_SUPABASE_RESET !== 'YES') {
+  throw new Error('This resets the shared Supabase public schema. Set CONFIRM_SUPABASE_RESET=YES to continue.');
+}
+
+const sql = postgres(connectionString, { prepare: false, ssl: 'require', max: 1 });
+
+(async () => {
+  try {
+    await sql`DROP SCHEMA public CASCADE`;
+    await sql`CREATE SCHEMA public`;
+    await sql`GRANT ALL ON SCHEMA public TO postgres`;
+    await sql`GRANT ALL ON SCHEMA public TO public`;
+    await sql.file(path.join(process.cwd(), 'database', 'schema.sql'));
+    console.log('Supabase public schema reset and recreated. Run npm run db:seed next.');
+  } finally {
+    await sql.end({ timeout: 2 });
+  }
+})().catch((error) => {
+  console.error('Supabase reset failed:', error.message);
+  process.exitCode = 1;
+});

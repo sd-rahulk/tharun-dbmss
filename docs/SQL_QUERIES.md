@@ -1,6 +1,6 @@
-# Executable SQLite Queries
+# Executable Supabase PostgreSQL Queries
 
-These queries run in `/dashboard/sql-workbench` against `data/transit.db` after `npm run db:seed`.
+These queries run in `/dashboard/sql-workbench` against the same Supabase PostgreSQL database used by the application.
 
 ## Academic relations and normalization
 
@@ -35,8 +35,7 @@ SELECT agent_name, SUM(price) AS total_sales
 FROM sales_list GROUP BY agent_name;
 
 SELECT agent_name, sales_date, price, emp_no
-FROM sales_list_original_view
-ORDER BY agent_name, sales_date;
+FROM sales_list_original_view ORDER BY agent_name, sales_date;
 ```
 
 ## Aggregation, transit, and bookings
@@ -59,7 +58,7 @@ JOIN trip t ON t.trip_id=tp.trip_id JOIN schedule s ON s.schedule_id=t.schedule_
 JOIN route r ON r.route_id=s.route_id LEFT JOIN vehicle v ON v.vehicle_id=s.vehicle_id;
 
 SELECT s.schedule_id, v.capacity,
-       v.capacity - COUNT(CASE WHEN bt.status='VALID' THEN 1 END) AS remaining_capacity
+       v.capacity - COUNT(bt.ticket_id) FILTER (WHERE bt.status='VALID') AS remaining_capacity
 FROM schedule s JOIN vehicle v ON v.vehicle_id=s.vehicle_id
 LEFT JOIN booking_ticket bt ON bt.schedule_id=s.schedule_id
 GROUP BY s.schedule_id, v.capacity;
@@ -68,14 +67,14 @@ SELECT schedule_id, COUNT(*) AS tickets
 FROM booking_ticket WHERE status='VALID'
 GROUP BY schedule_id ORDER BY tickets DESC;
 
-SELECT date(paid_at) AS sales_day, SUM(amount) AS revenue_minor
+SELECT paid_at::date AS sales_day, SUM(amount) AS revenue_minor
 FROM fare_payment WHERE payment_status='SUCCESS'
-GROUP BY date(paid_at) ORDER BY sales_day;
+GROUP BY paid_at::date ORDER BY sales_day;
 
 SELECT p.name, tp.pass_type, pp.valid_from, pp.valid_until
 FROM pass_purchase pp JOIN passenger p ON p.passenger_id=pp.passenger_id
 JOIN transit_pass tp ON tp.pass_id=pp.pass_id
-WHERE pp.status='ACTIVE' AND date('now') BETWEEN pp.valid_from AND pp.valid_until;
+WHERE pp.status='ACTIVE' AND CURRENT_DATE::text BETWEEN pp.valid_from AND pp.valid_until;
 
 SELECT v.vehicle_id, v.reg_no, v.capacity, mt.no_of_coaches
 FROM vehicle v JOIN metro_train mt ON mt.vehicle_id=v.vehicle_id;
@@ -86,34 +85,38 @@ WHERE rc.city_id='C017';
 
 SELECT s.schedule_id, s.departure_date, s.departure_time
 FROM schedule s
-WHERE NOT EXISTS (
-  SELECT 1 FROM booking_ticket bt
-  WHERE bt.schedule_id=s.schedule_id AND bt.status='VALID'
-);
+WHERE NOT EXISTS (SELECT 1 FROM booking_ticket bt
+  WHERE bt.schedule_id=s.schedule_id AND bt.status='VALID');
 
 SELECT e.emp_no, e.emp_name, COUNT(s.schedule_id) AS schedule_count
 FROM employee e JOIN schedule s ON s.emp_no=e.emp_no
-GROUP BY e.emp_no, e.emp_name
-HAVING COUNT(s.schedule_id)>1;
+GROUP BY e.emp_no, e.emp_name HAVING COUNT(s.schedule_id)>1;
 
 SELECT payment_method, payment_status, COUNT(*) AS payments, SUM(amount) AS total_minor
 FROM fare_payment GROUP BY payment_method, payment_status;
 ```
 
-## Normalization, constraints, and metadata
+## Normalization and metadata
 
 ```sql
 SELECT agent_name, sales_date, price, emp_no
 FROM sales_list_original_view;
--- Key: (Agent_Name, Sales_Date); Agent_Name -> Emp_No is partial.
+-- Key: (Agent_Name, Sales_Date); Agent_Name -> Emp_No is partial in the original.
 
-SELECT name, type FROM sqlite_master
-WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'
+SELECT table_name AS name, 'table' AS type
+FROM information_schema.tables WHERE table_schema='public'
+UNION ALL
+SELECT table_name AS name, 'view' AS type
+FROM information_schema.views WHERE table_schema='public'
 ORDER BY type, name;
 
-PRAGMA foreign_key_list(schedule);
-PRAGMA table_info(route_city);
-PRAGMA index_list(booking_ticket);
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_schema='public' AND table_name='route_city'
+ORDER BY ordinal_position;
+
+SELECT indexname, indexdef FROM pg_indexes
+WHERE schemaname='public' AND tablename='booking_ticket';
 ```
 
 ## Revenue source policy

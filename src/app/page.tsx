@@ -8,11 +8,11 @@ import { JourneySearch } from '@/components/journey-search';
 
 export const dynamic = 'force-dynamic';
 
-export default function HomePage() {
-  const stats = getPublicStats();
-  const routes = getFeaturedRoutes();
-  const alerts = getServiceAlerts();
-  const stops = getDb().prepare('SELECT city_id, bus_stop, near FROM cities_town ORDER BY bus_stop').all() as Array<{city_id:string;bus_stop:string;near:string}>;
+export default async function HomePage() {
+  const stats = (await getPublicStats()) ?? { routes: 0, stops: 0, vehicles: 0, upcoming_services: 0 };
+  const routes = await getFeaturedRoutes();
+  const alerts = await getServiceAlerts();
+  const stops = await getDb().prepare('SELECT city_id, bus_stop, near FROM cities_town ORDER BY bus_stop').all<{city_id:string;bus_stop:string;near:string}>();
   return <main className="grain min-h-screen overflow-x-hidden">
     <SiteHeader />
     <section className="mx-auto max-w-[1440px] px-6 pb-24 pt-14 lg:px-12 lg:pb-36 lg:pt-20"><div className="grid items-end gap-12 lg:grid-cols-[1.15fr_.85fr]"><div className="fade-in"><p className="eyebrow">Public mobility, made legible</p><h1 className="display mt-6 max-w-6xl text-[clamp(3.2rem,7vw,7rem)] font-semibold leading-[.92]">Move through the city with <span className="text-transit">less friction.</span></h1><p className="mt-8 max-w-xl text-lg leading-8 text-black/60">A calm, connected command layer for Chennai-themed bus and metro services — from the first stop search to the last ticket check.</p><div className="mt-9 flex flex-wrap gap-3"><Link href="/journey-planner" className="inline-flex min-h-12 items-center gap-2 rounded-full bg-ink px-6 text-sm font-semibold text-white transition-colors hover:bg-transit">Plan a journey <ArrowRight size={17} /></Link><Link href="/register" className="inline-flex min-h-12 items-center gap-2 rounded-full border border-black/15 px-6 text-sm font-semibold text-ink transition-colors hover:border-transit hover:text-transit">Create passenger account</Link></div></div><div className="relative min-h-[300px] overflow-hidden rounded-[2rem] bg-[#1f393d] p-7 text-white shadow-lift"><div className="absolute -right-16 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" /><div className="absolute bottom-7 left-7 right-7"><div className="flex items-center justify-between"><span className="eyebrow text-[#bad5d6]">Network snapshot</span><TrainFront size={24} className="text-[#bad5d6]" /></div><p className="display mt-5 text-5xl font-semibold">{stats.upcoming_services}</p><p className="mt-1 text-sm text-white/65">scheduled services ahead</p><div className="mt-8 grid grid-cols-3 gap-3 border-t border-white/15 pt-5 text-sm"><div><p className="data-number text-2xl font-semibold">{stats.routes}</p><p className="mt-1 text-white/55">routes</p></div><div><p className="data-number text-2xl font-semibold">{stats.stops}</p><p className="mt-1 text-white/55">stops</p></div><div><p className="data-number text-2xl font-semibold">{stats.vehicles}</p><p className="mt-1 text-white/55">vehicles</p></div></div></div></div></div></section>

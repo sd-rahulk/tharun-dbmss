@@ -2,7 +2,7 @@
 
 ## Abstract
 
-PUBLIC METRO & BUS TRANSIT MANAGEMENT SYSTEM is a local SQLite DBMS application that connects a recognizable academic transit schema to a usable passenger and operations workflow. The system demonstrates entity modelling, extended specialization, relational constraints, functional dependencies, normalization, transactional booking, and database introspection in one executable artifact.
+PUBLIC METRO & BUS TRANSIT MANAGEMENT SYSTEM is a Supabase PostgreSQL DBMS application that connects a recognizable academic transit schema to a usable passenger and operations workflow. The system demonstrates entity modelling, extended specialization, relational constraints, functional dependencies, normalization, transactional booking, and database introspection in one executable artifact.
 
 ## Introduction and problem statement
 
@@ -55,21 +55,21 @@ SALES_LIST(Agent_Name, Sales_Date, Price)
 
 The original four columns are reconstructed by joining on `Agent_Name` in `sales_list_original_view`. For SCHEDULE, the assignment's additional `Bus_No -> Emp_No` causes the noted transitive dependency. The practical application adds a per-schedule employee assignment because drivers can change by shift; this is explicitly an extension rather than a rewritten academic claim.
 
-## SQLite implementation
+## Supabase PostgreSQL implementation
 
-`better-sqlite3` is used in the Node runtime. Initialization enables `PRAGMA foreign_keys = ON` and WAL mode. The booking transaction validates the schedule, ordered stops, capacity, seats, fare, and passenger, then creates booking, tickets, trip, passenger junction, and simulated fare payment. A simulated decline throws before commit, proving rollback.
+The Node runtime uses `postgres` with the Supabase PostgreSQL connection string. PostgreSQL foreign keys are defined in the schema. The booking transaction validates the schedule, ordered stops, capacity, seats, fare, and passenger, then creates booking, tickets, trip, passenger junction, and simulated fare payment. A simulated decline throws before commit, proving rollback.
 
 ## Sample data
 
-The seed keeps E001–E018, B101–B109, R01–R10, S001–S004, T001–T004, C001–C020, and named agents Anitha, Bala, Chitra, and Farah. The generated extension adds 20 vehicles, 50 future services, 20 passengers, 30 bookings/tickets, pass purchases, payments, and sales. Future schedules use SQLite date expressions so they remain demonstrable after installation.
+The seed keeps E001-E018, B101-B109, R01-R10, S001-S004, T001-T004, C001-C020, and named agents Anitha, Bala, Chitra, and Farah. The generated extension adds 20 vehicles, 50 future services, 20 passengers, 30 bookings/tickets, pass purchases, payments, and sales. Future schedules are generated in JavaScript relative to the seed date so they remain demonstrable after installation.
 
 ## SQL queries
 
-The SQL workbench and `docs/SQL_QUERIES.md` contain direct SELECT, join, group, having, subquery, normalization, booking, revenue, and metadata examples. They are executable against the same data file and use parameterized application operations outside the workbench.
+The SQL workbench and `docs/SQL_QUERIES.md` contain direct SELECT, join, group, having, subquery, normalization, booking, revenue, and metadata examples. They are executable against the same Supabase database and use parameterized application operations outside the workbench.
 
 ## Testing
 
-The Vitest suite uses an isolated temporary SQLite database. It checks foreign-key enforcement, primary/composite key behavior, route order, conflicts, subtype exclusivity, booking persistence, capacity, cancellation, rollback, normalized sales view, and seed referential integrity.
+The Vitest suite uses a separate Supabase test database configured with `SUPABASE_TEST_DB_URL`. It checks foreign-key enforcement, primary/composite key behavior, route order, conflicts, subtype exclusivity, booking persistence, capacity, cancellation, rollback, normalized sales view, and seed referential integrity. Without that variable, integration tests are skipped rather than touching a development database.
 
 ## Conclusion and future scope
 

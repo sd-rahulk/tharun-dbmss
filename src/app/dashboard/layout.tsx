@@ -4,8 +4,8 @@ import { DashboardShell } from '@/components/dashboard-shell';
 
 export const dynamic = 'force-dynamic';
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const user = getSessionUser();
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const user = await getSessionUser();
   if (!user) redirect('/login?next=/dashboard');
   return <DashboardShell user={user}>{children}</DashboardShell>;
 }

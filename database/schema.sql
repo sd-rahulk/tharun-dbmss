@@ -1,10 +1,7 @@
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-
 -- PUBLIC METRO & BUS TRANSIT MANAGEMENT SYSTEM
--- ISO dates/times are stored as TEXT so SQLite can sort them lexically.
--- The first nine relations are the original DA relations. Later tables are
--- labelled EER or application extensions in docs/SCHEMA_REFERENCE.md.
+-- Supabase PostgreSQL schema. The first nine relations preserve the academic
+-- assignment identities; later relations are EER/application extensions.
+-- The application connects with SUPABASE_DB_URL using postgres.js.
 
 CREATE TABLE IF NOT EXISTS employee (
   emp_no TEXT PRIMARY KEY,
@@ -57,62 +54,65 @@ CREATE TABLE IF NOT EXISTS vehicle (
 );
 
 CREATE TABLE IF NOT EXISTS vehicle_bus (
-  vehicle_id TEXT PRIMARY KEY,
+  vehicle_id TEXT PRIMARY KEY REFERENCES vehicle(vehicle_id) ON DELETE CASCADE,
   no_of_seats INTEGER NOT NULL CHECK (no_of_seats > 0),
-  engine_type TEXT NOT NULL,
-  FOREIGN KEY (vehicle_id) REFERENCES vehicle(vehicle_id) ON DELETE CASCADE
+  engine_type TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS mini_bus (
-  vehicle_id TEXT PRIMARY KEY,
+  vehicle_id TEXT PRIMARY KEY REFERENCES vehicle(vehicle_id) ON DELETE CASCADE,
   no_of_seats INTEGER NOT NULL CHECK (no_of_seats > 0),
-  ac_non_ac TEXT NOT NULL CHECK (ac_non_ac IN ('AC','NON_AC')),
-  FOREIGN KEY (vehicle_id) REFERENCES vehicle(vehicle_id) ON DELETE CASCADE
+  ac_non_ac TEXT NOT NULL CHECK (ac_non_ac IN ('AC','NON_AC'))
 );
 
 CREATE TABLE IF NOT EXISTS metro_train (
-  vehicle_id TEXT PRIMARY KEY,
+  vehicle_id TEXT PRIMARY KEY REFERENCES vehicle(vehicle_id) ON DELETE CASCADE,
   no_of_coaches INTEGER NOT NULL CHECK (no_of_coaches > 0),
-  system_type TEXT NOT NULL,
-  FOREIGN KEY (vehicle_id) REFERENCES vehicle(vehicle_id) ON DELETE CASCADE
+  system_type TEXT NOT NULL
 );
 
--- Exclusive subtype enforcement for the EER specialization.
-CREATE TRIGGER IF NOT EXISTS vehicle_bus_disjoint BEFORE INSERT ON vehicle_bus
-WHEN EXISTS (SELECT 1 FROM mini_bus WHERE vehicle_id = NEW.vehicle_id)
-   OR EXISTS (SELECT 1 FROM metro_train WHERE vehicle_id = NEW.vehicle_id)
-BEGIN SELECT RAISE(ABORT, 'A vehicle can have only one subtype'); END;
-CREATE TRIGGER IF NOT EXISTS mini_bus_disjoint BEFORE INSERT ON mini_bus
-WHEN EXISTS (SELECT 1 FROM vehicle_bus WHERE vehicle_id = NEW.vehicle_id)
-   OR EXISTS (SELECT 1 FROM metro_train WHERE vehicle_id = NEW.vehicle_id)
-BEGIN SELECT RAISE(ABORT, 'A vehicle can have only one subtype'); END;
-CREATE TRIGGER IF NOT EXISTS metro_train_disjoint BEFORE INSERT ON metro_train
-WHEN EXISTS (SELECT 1 FROM vehicle_bus WHERE vehicle_id = NEW.vehicle_id)
-   OR EXISTS (SELECT 1 FROM mini_bus WHERE vehicle_id = NEW.vehicle_id)
-BEGIN SELECT RAISE(ABORT, 'A vehicle can have only one subtype'); END;
+-- Practical EER assumption: specialization is disjoint. The application
+-- creates exactly one subtype row in the same transaction as vehicle creation.
+CREATE OR REPLACE FUNCTION prevent_vehicle_subtype_overlap() RETURNS trigger AS $$
+BEGIN
+  IF TG_TABLE_NAME <> 'vehicle_bus' AND EXISTS (SELECT 1 FROM vehicle_bus WHERE vehicle_id = NEW.vehicle_id) THEN
+    RAISE EXCEPTION 'A vehicle can have only one subtype';
+  END IF;
+  IF TG_TABLE_NAME <> 'mini_bus' AND EXISTS (SELECT 1 FROM mini_bus WHERE vehicle_id = NEW.vehicle_id) THEN
+    RAISE EXCEPTION 'A vehicle can have only one subtype';
+  END IF;
+  IF TG_TABLE_NAME <> 'metro_train' AND EXISTS (SELECT 1 FROM metro_train WHERE vehicle_id = NEW.vehicle_id) THEN
+    RAISE EXCEPTION 'A vehicle can have only one subtype';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- Operational BUS from the original ER model mapped to EER vehicle BUS.
+DROP TRIGGER IF EXISTS vehicle_bus_disjoint ON vehicle_bus;
+CREATE TRIGGER vehicle_bus_disjoint BEFORE INSERT ON vehicle_bus
+FOR EACH ROW EXECUTE FUNCTION prevent_vehicle_subtype_overlap();
+DROP TRIGGER IF EXISTS mini_bus_disjoint ON mini_bus;
+CREATE TRIGGER mini_bus_disjoint BEFORE INSERT ON mini_bus
+FOR EACH ROW EXECUTE FUNCTION prevent_vehicle_subtype_overlap();
+DROP TRIGGER IF EXISTS metro_train_disjoint ON metro_train;
+CREATE TRIGGER metro_train_disjoint BEFORE INSERT ON metro_train
+FOR EACH ROW EXECUTE FUNCTION prevent_vehicle_subtype_overlap();
+
 CREATE TABLE IF NOT EXISTS bus_vehicle (
-  bus_no TEXT PRIMARY KEY,
-  vehicle_id TEXT NOT NULL UNIQUE,
-  FOREIGN KEY (bus_no) REFERENCES bus(bus_no) ON DELETE CASCADE,
-  FOREIGN KEY (vehicle_id) REFERENCES vehicle(vehicle_id)
+  bus_no TEXT PRIMARY KEY REFERENCES bus(bus_no) ON DELETE CASCADE,
+  vehicle_id TEXT NOT NULL UNIQUE REFERENCES vehicle(vehicle_id)
 );
 
 CREATE TABLE IF NOT EXISTS schedule (
   schedule_id TEXT PRIMARY KEY,
   departure_date TEXT NOT NULL CHECK (length(departure_date) = 10),
   departure_time TEXT NOT NULL CHECK (length(departure_time) = 5),
-  route_id TEXT NOT NULL,
-  bus_no TEXT,
-  emp_no TEXT NOT NULL,
-  vehicle_id TEXT,
+  route_id TEXT NOT NULL REFERENCES route(route_id),
+  bus_no TEXT REFERENCES bus(bus_no),
+  emp_no TEXT NOT NULL REFERENCES employee(emp_no),
+  vehicle_id TEXT REFERENCES vehicle(vehicle_id),
   status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED','CANCELLED','COMPLETED')),
-  FOREIGN KEY (route_id) REFERENCES route(route_id),
-  FOREIGN KEY (bus_no) REFERENCES bus(bus_no),
-  FOREIGN KEY (emp_no) REFERENCES employee(emp_no),
-  FOREIGN KEY (vehicle_id) REFERENCES vehicle(vehicle_id),
-  CHECK ((vehicle_id IS NOT NULL) OR (bus_no IS NOT NULL))
+  CHECK (vehicle_id IS NOT NULL OR bus_no IS NOT NULL)
 );
 
 CREATE TABLE IF NOT EXISTS cities_town (
@@ -122,43 +122,37 @@ CREATE TABLE IF NOT EXISTS cities_town (
 );
 
 CREATE TABLE IF NOT EXISTS route_city (
-  route_id TEXT NOT NULL,
-  city_id TEXT NOT NULL,
+  route_id TEXT NOT NULL REFERENCES route(route_id) ON DELETE CASCADE,
+  city_id TEXT NOT NULL REFERENCES cities_town(city_id),
   stop_sequence INTEGER NOT NULL CHECK (stop_sequence > 0),
   PRIMARY KEY (route_id, city_id),
-  UNIQUE (route_id, stop_sequence),
-  FOREIGN KEY (route_id) REFERENCES route(route_id) ON DELETE CASCADE,
-  FOREIGN KEY (city_id) REFERENCES cities_town(city_id)
+  UNIQUE (route_id, stop_sequence)
 );
 
 CREATE TABLE IF NOT EXISTS ticket (
   ticket_number TEXT PRIMARY KEY,
-  schedule_id TEXT NOT NULL,
-  agent_name TEXT,
-  FOREIGN KEY (schedule_id) REFERENCES schedule(schedule_id),
-  FOREIGN KEY (agent_name) REFERENCES agent(agent_name)
+  schedule_id TEXT NOT NULL REFERENCES schedule(schedule_id),
+  agent_name TEXT REFERENCES agent(agent_name)
 );
 
--- Normalized SALES_LIST: Emp_No is stored once in AGENT. The original
--- four-column relation is exposed through sales_list_original_view below.
+-- Normalized SALES_LIST. The original four-column relation is exposed by the
+-- compatibility view below; Emp_No is obtained through AGENT.
 CREATE TABLE IF NOT EXISTS sales_list (
-  agent_name TEXT NOT NULL,
+  agent_name TEXT NOT NULL REFERENCES agent(agent_name),
   sales_date TEXT NOT NULL,
   price NUMERIC NOT NULL CHECK (price >= 0),
-  PRIMARY KEY (agent_name, sales_date),
-  FOREIGN KEY (agent_name) REFERENCES agent(agent_name)
+  PRIMARY KEY (agent_name, sales_date)
 );
 
-CREATE VIEW IF NOT EXISTS sales_list_original_view AS
+CREATE OR REPLACE VIEW sales_list_original_view AS
 SELECT s.agent_name, s.sales_date, s.price, a.emp_no
 FROM sales_list s JOIN agent a ON a.agent_name = s.agent_name;
 
 CREATE TABLE IF NOT EXISTS fare_rule (
   fare_rule_id TEXT PRIMARY KEY,
-  route_id TEXT NOT NULL UNIQUE,
+  route_id TEXT NOT NULL UNIQUE REFERENCES route(route_id) ON DELETE CASCADE,
   base_fare_minor INTEGER NOT NULL CHECK (base_fare_minor >= 0),
-  per_stop_minor INTEGER NOT NULL DEFAULT 0 CHECK (per_stop_minor >= 0),
-  FOREIGN KEY (route_id) REFERENCES route(route_id) ON DELETE CASCADE
+  per_stop_minor INTEGER NOT NULL DEFAULT 0 CHECK (per_stop_minor >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS passenger (
@@ -177,14 +171,12 @@ CREATE TABLE IF NOT EXISTS transit_pass (
 
 CREATE TABLE IF NOT EXISTS pass_purchase (
   purchase_id TEXT PRIMARY KEY,
-  passenger_id TEXT NOT NULL,
-  pass_id TEXT NOT NULL,
+  passenger_id TEXT NOT NULL REFERENCES passenger(passenger_id),
+  pass_id TEXT NOT NULL REFERENCES transit_pass(pass_id),
   purchase_date TEXT NOT NULL,
   valid_from TEXT NOT NULL,
   valid_until TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','EXPIRED','CANCELLED')),
-  FOREIGN KEY (passenger_id) REFERENCES passenger(passenger_id),
-  FOREIGN KEY (pass_id) REFERENCES transit_pass(pass_id)
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','EXPIRED','CANCELLED'))
 );
 
 CREATE TABLE IF NOT EXISTS trip (
@@ -192,69 +184,56 @@ CREATE TABLE IF NOT EXISTS trip (
   travel_date TEXT NOT NULL,
   boarding_time TEXT NOT NULL,
   alighting_time TEXT,
-  schedule_id TEXT NOT NULL,
-  boarding_city_id TEXT NOT NULL,
-  destination_city_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'VALID' CHECK (status IN ('VALID','CANCELLED','COMPLETED')),
-  FOREIGN KEY (schedule_id) REFERENCES schedule(schedule_id),
-  FOREIGN KEY (boarding_city_id) REFERENCES cities_town(city_id),
-  FOREIGN KEY (destination_city_id) REFERENCES cities_town(city_id)
+  schedule_id TEXT NOT NULL REFERENCES schedule(schedule_id),
+  boarding_city_id TEXT NOT NULL REFERENCES cities_town(city_id),
+  destination_city_id TEXT NOT NULL REFERENCES cities_town(city_id),
+  status TEXT NOT NULL DEFAULT 'VALID' CHECK (status IN ('VALID','CANCELLED','COMPLETED'))
 );
 
 CREATE TABLE IF NOT EXISTS trip_passenger (
-  trip_id TEXT NOT NULL,
-  passenger_id TEXT NOT NULL,
-  PRIMARY KEY (trip_id, passenger_id),
-  FOREIGN KEY (trip_id) REFERENCES trip(trip_id) ON DELETE CASCADE,
-  FOREIGN KEY (passenger_id) REFERENCES passenger(passenger_id)
+  trip_id TEXT NOT NULL REFERENCES trip(trip_id) ON DELETE CASCADE,
+  passenger_id TEXT NOT NULL REFERENCES passenger(passenger_id),
+  PRIMARY KEY (trip_id, passenger_id)
 );
 
 CREATE TABLE IF NOT EXISTS passenger_booking (
-  booking_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  booking_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   booking_reference TEXT NOT NULL UNIQUE,
-  passenger_id TEXT NOT NULL,
-  schedule_id TEXT NOT NULL,
-  boarding_city_id TEXT NOT NULL,
-  destination_city_id TEXT NOT NULL,
+  passenger_id TEXT NOT NULL REFERENCES passenger(passenger_id),
+  schedule_id TEXT NOT NULL REFERENCES schedule(schedule_id),
+  boarding_city_id TEXT NOT NULL REFERENCES cities_town(city_id),
+  destination_city_id TEXT NOT NULL REFERENCES cities_town(city_id),
   quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
   total_fare_minor INTEGER NOT NULL CHECK (total_fare_minor >= 0),
   status TEXT NOT NULL DEFAULT 'CONFIRMED' CHECK (status IN ('CONFIRMED','CANCELLED','COMPLETED','REFUNDED')),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  cancelled_at TEXT,
-  FOREIGN KEY (passenger_id) REFERENCES passenger(passenger_id),
-  FOREIGN KEY (schedule_id) REFERENCES schedule(schedule_id),
-  FOREIGN KEY (boarding_city_id) REFERENCES cities_town(city_id),
-  FOREIGN KEY (destination_city_id) REFERENCES cities_town(city_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  cancelled_at TIMESTAMPTZ,
   CHECK (boarding_city_id <> destination_city_id)
 );
 
 CREATE TABLE IF NOT EXISTS booking_ticket (
-  ticket_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticket_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   ticket_number TEXT NOT NULL UNIQUE,
-  booking_id INTEGER NOT NULL,
-  passenger_id TEXT NOT NULL,
-  schedule_id TEXT NOT NULL,
+  booking_id BIGINT NOT NULL REFERENCES passenger_booking(booking_id) ON DELETE CASCADE,
+  passenger_id TEXT NOT NULL REFERENCES passenger(passenger_id),
+  schedule_id TEXT NOT NULL REFERENCES schedule(schedule_id),
   seat_number TEXT,
-  status TEXT NOT NULL DEFAULT 'VALID' CHECK (status IN ('VALID','CANCELLED','USED')),
-  FOREIGN KEY (booking_id) REFERENCES passenger_booking(booking_id) ON DELETE CASCADE,
-  FOREIGN KEY (passenger_id) REFERENCES passenger(passenger_id),
-  FOREIGN KEY (schedule_id) REFERENCES schedule(schedule_id)
+  status TEXT NOT NULL DEFAULT 'VALID' CHECK (status IN ('VALID','CANCELLED','USED'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS unique_active_seat
-ON booking_ticket(schedule_id, seat_number) WHERE seat_number IS NOT NULL AND status = 'VALID';
+ON booking_ticket(schedule_id, seat_number)
+WHERE seat_number IS NOT NULL AND status = 'VALID';
 
 CREATE TABLE IF NOT EXISTS fare_payment (
   payment_id TEXT PRIMARY KEY,
-  trip_id TEXT UNIQUE,
-  booking_id INTEGER,
+  trip_id TEXT UNIQUE REFERENCES trip(trip_id),
+  booking_id BIGINT REFERENCES passenger_booking(booking_id),
   amount INTEGER NOT NULL CHECK (amount >= 0),
   payment_method TEXT NOT NULL CHECK (payment_method IN ('SIMULATED_CARD','UPI_SIMULATION','CASH','PASS')),
   payment_status TEXT NOT NULL CHECK (payment_status IN ('SUCCESS','FAILED','REFUNDED')),
-  paid_at TEXT,
-  transaction_reference TEXT UNIQUE,
-  FOREIGN KEY (trip_id) REFERENCES trip(trip_id),
-  FOREIGN KEY (booking_id) REFERENCES passenger_booking(booking_id)
+  paid_at TIMESTAMPTZ,
+  transaction_reference TEXT UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS app_user (
@@ -262,20 +241,17 @@ CREATE TABLE IF NOT EXISTS app_user (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('ADMIN','STAFF','AGENT','PASSENGER')),
-  passenger_id TEXT UNIQUE,
-  agent_name TEXT UNIQUE,
+  passenger_id TEXT UNIQUE REFERENCES passenger(passenger_id),
+  agent_name TEXT UNIQUE REFERENCES agent(agent_name),
   display_name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DISABLED')),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (passenger_id) REFERENCES passenger(passenger_id),
-  FOREIGN KEY (agent_name) REFERENCES agent(agent_name)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS session (
   session_token_hash TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  expires_at TEXT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE
+  user_id TEXT NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS service_alert (
@@ -283,31 +259,28 @@ CREATE TABLE IF NOT EXISTS service_alert (
   title TEXT NOT NULL,
   message TEXT NOT NULL,
   severity TEXT NOT NULL CHECK (severity IN ('INFO','NOTICE','DISRUPTION')),
-  route_id TEXT,
+  route_id TEXT REFERENCES route(route_id) ON DELETE SET NULL,
   active_from TEXT NOT NULL,
-  active_until TEXT,
-  FOREIGN KEY (route_id) REFERENCES route(route_id) ON DELETE SET NULL
+  active_until TEXT
 );
 
 CREATE TABLE IF NOT EXISTS notification (
   notification_id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   message TEXT NOT NULL,
-  read_at TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE CASCADE
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
-  audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT,
+  audit_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  user_id TEXT REFERENCES app_user(user_id) ON DELETE SET NULL,
   action TEXT NOT NULL,
   entity_name TEXT NOT NULL,
   entity_id TEXT,
   details TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES app_user(user_id) ON DELETE SET NULL
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_schedule_date ON schedule(departure_date, departure_time);

@@ -1,31 +1,33 @@
 # PUBLIC METRO & BUS TRANSIT MANAGEMENT SYSTEM
 
-Transit / 26 is a complete SQLite-first academic DBMS application for public bus and metro operations. It keeps the original assignment relations recognizable, adds a proper EER vehicle hierarchy, and turns the model into a runnable local platform with authentication, journey search, transaction-safe booking, simulated payments, analytics, and a real SQL workbench.
+Transit / 26 is a Next.js academic DBMS application for Chennai-themed bus and metro operations. The UI and business rules are preserved, while the runtime database is now Supabase PostgreSQL only. There is no local SQLite file and no JSON database.
 
-All transit values in the realistic demo dataset are illustrative Chennai-themed data. They are not verified live schedules. The August 2026 records preserve the recognizable academic sample identifiers while correcting the inconsistent ticket reference so every executable foreign key is valid.
+All realistic routes and schedules are illustrative demo data, not verified live timetables. Academic identifiers such as E001, B101, R01, S001, T001, C001, Anitha, Bala, Chitra, and Farah are retained. Broken academic references were corrected in the executable seed.
 
-## What the project proves
+## Stack and architecture
 
-- Nine original relations: `employee`, `bus`, `route`, `agent`, `schedule`, `ticket`, `cities_town`, `route_city`, and normalized `sales_list`.
-- `sales_list_original_view` reconstructs the original four-column relation and makes its `Agent_Name -> Emp_No` partial dependency visible.
-- EER superclass/subclass tables: `vehicle`, `vehicle_bus`, `mini_bus`, and `metro_train`, with shared primary keys and disjoint-subtype triggers.
-- Operational `bus_vehicle` mapping keeps the academic BUS relation separate from the EER BUS subtype. Metro services use `metro_train` vehicles and may keep `schedule.bus_no` null.
-- Passenger accounts, roles, HTTP-only sessions, journey search, route-order validation, capacity-derived availability, seat uniqueness, QR ticket identifiers, cancellation, trips, passes, payments, alerts, audit-ready structure, and SQLite metadata inspection.
+- Next.js App Router, TypeScript, Tailwind CSS, Lucide, Recharts, Zod, QRCode React, Vitest.
+- `postgres` connects the persistent Node.js runtime directly to the Supabase PostgreSQL database.
+- `database/schema.sql` defines the academic relations, EER shared-primary-key subtypes, constraints, indexes, triggers, and application extensions.
+- `database/seed.sql` loads the academic/catalog records. `scripts/seed-db.js` adds future schedules, bookings, tickets, simulated payments, passes, alerts, and demo accounts.
+- `src/lib/db.ts` is the async database adapter. Services use parameterized SQL and PostgreSQL transactions.
+- `src/app/api/sql/execute/route.ts` runs read-only queries against the same Supabase database used by the application.
 
-## Technology
+## Prerequisites and setup
 
-Next.js App Router, TypeScript, Tailwind CSS, better-sqlite3, SQLite WAL mode, Zod, Recharts, Lucide icons, QRCode React, and Vitest. The SQLite driver is only imported by Node/server code; this project does not use PostgreSQL, MySQL, MongoDB, Firebase, Supabase, or a hosted database.
-
-## Prerequisites
-
-- Node.js 20+ (Node 24 is supported in the supplied environment).
-- npm.
-
-## Installation and run
+1. Create a Supabase project and copy its PostgreSQL connection string from Dashboard → Connect. Use the Session Pooler URL for most local development.
+2. Install Node.js 20+ and npm.
+3. Run:
 
 ```bash
 npm install
 copy .env.example .env
+```
+
+4. Edit `.env` and set `SUPABASE_DB_URL` to the real Supabase connection string. Keep the password URL-encoded if it contains reserved URL characters.
+5. Initialize and seed:
+
+```bash
 npm run db:init
 npm run db:seed
 npm run dev
@@ -36,31 +38,37 @@ Open `http://localhost:3000`.
 Useful commands:
 
 ```bash
-npm run build       # production build
-npm start           # serve the production build
-npm test            # isolated SQLite tests
-npm run db:reset    # deletes and recreates only data/transit.db, then run db:seed
+npm run build
+npm start
+npm test
+npm run test:watch
 ```
 
-`db:init` is idempotent. `db:seed` uses `INSERT OR IGNORE` and is safe to repeat. `db:reset` is intentionally destructive for the development database only; it never runs as part of the test suite.
+`npm run db:init` is idempotent. `npm run db:seed` is safe to repeat because inserts use conflict-safe PostgreSQL statements. To reset the shared Supabase `public` schema, use an explicit confirmation:
 
-## Environment
+```powershell
+$env:CONFIRM_SUPABASE_RESET="YES"
+npm run db:reset
+npm run db:seed
+```
 
-`.env.example` contains:
+Do not run the reset command against a database containing data you need.
+
+## Environment variables
 
 ```text
-DATABASE_PATH=./data/transit.db
+SUPABASE_DB_URL=postgresql://postgres.[PROJECT-REF]:[PASSWORD]@[POOLER-HOST]:5432/postgres
 SESSION_SECRET=replace-this-with-a-long-random-secret
 SQL_MAX_ROWS=500
 NODE_ENV=development
 COOKIE_SECURE=false
 ```
 
-`DATABASE_PATH` controls the one SQLite file used by the public landing page, dashboards, route APIs, booking transactions, charts, and `/dashboard/sql-workbench`. By default it is `data/transit.db`. `SESSION_SECRET` is reserved for production hardening; session cookies are opaque random tokens and only a SHA-256 token hash is stored in SQLite. Passwords are bcrypt hashes. Set `COOKIE_SECURE=true` when serving over HTTPS; it stays false for local HTTP development.
+`SUPABASE_DB_URL` is the only database setting. `SESSION_SECRET` is reserved for future signing hardening; sessions currently use opaque random tokens with SHA-256 hashes stored server-side. Set `COOKIE_SECURE=true` behind HTTPS. For integration tests, set `SUPABASE_TEST_DB_URL` to a separate Supabase project/database before running tests.
 
 ## Demo accounts
 
-These development-only credentials are inserted by `npm run db:seed`:
+Created by `npm run db:seed`:
 
 | Role | Email | Password |
 |---|---|---|
@@ -69,88 +77,52 @@ These development-only credentials are inserted by `npm run db:seed`:
 | AGENT | `agent@transit.local` | `Agent@123` |
 | PASSENGER | `passenger@transit.local` | `Passenger@123` |
 
-Passengers can register at `/register`. Every protected operation checks the server-side session and role; navigation visibility is not the authorization boundary.
+These are development-only credentials. Change or remove them before any public deployment. Passengers can register at `/register`.
 
-## Application routes
+## Main workflows
 
-Public: `/`, `/routes`, `/routes/[id]`, `/journey-planner`, `/login`, `/register`.
+Passenger flow: choose origin, destination, date, and service mode; the server validates the ordered `route_city` stops; select quantity and seats for bus/minibus services; complete a simulated payment; receive a persistent booking, ticket, trip, fare payment, and opaque QR ticket identifier; cancel before travel and capacity is restored.
 
-Passenger: `/dashboard`, `/dashboard/journey-planner`, `/dashboard/my-bookings`, `/dashboard/my-tickets`, `/dashboard/my-passes`, `/dashboard/trip-history`.
+Operations flow: sign in as ADMIN or STAFF to inspect the unified vehicle fleet, concrete metro subtype, academic buses, routes, stops, schedules, employees, agents, passengers, tickets, sales, service alerts, payments, and charts. Server-side role checks protect every protected page/API operation.
 
-Operations: `/dashboard/vehicles`, `/dashboard/metro`, `/dashboard/routes`, `/dashboard/schedules`, `/dashboard/employees`, `/dashboard/agents`.
+## Academic DBMS model
 
-DBMS: `/dashboard/sql-workbench`, `/dashboard/dbms`, `/dashboard/dbms/er-diagram`, `/dashboard/dbms/eer-diagram`, `/dashboard/dbms/relational-schema`, `/dashboard/dbms/normalization`, `/dashboard/dbms/sql-examples`.
+The nine original relations remain recognizable: `employee`, `bus`, `route`, `agent`, `schedule`, `ticket`, `cities_town`, `route_city`, and normalized `sales_list`.
 
-## Passenger workflow
+The original `SALES_LIST(Agent_Name, Sales_Date, Price, Emp_No)` has key `(Agent_Name, Sales_Date)` and dependency `Agent_Name -> Emp_No`, so it violates 2NF through a partial dependency. The implementation stores `Emp_No` in `agent` and uses `sales_list(agent_name, sales_date, price)`. `sales_list_original_view` reconstructs the four-column academic view.
 
-1. Open Journey Planner and choose two stops and a future date.
-2. The server joins `route_city` twice and rejects reverse-direction travel; the destination must have a greater `stop_sequence`.
-3. Availability is calculated from `vehicle.capacity - COUNT(valid booking_ticket)`.
-4. A signed-in passenger confirms a simulated payment. The booking, academic ticket, booking ticket, trip, passenger junction, and fare payment are created inside one SQLite transaction.
-5. A unique opaque ticket number is rendered as a QR code. No sensitive passenger data is placed in the QR payload.
-6. Cancellation changes booking/ticket/trip/payment state in one transaction, making the capacity available again. A past service cannot be cancelled.
+The EER model uses `vehicle` as superclass and `vehicle_bus`, `mini_bus`, and `metro_train` as shared-primary-key subtypes. The application assumes disjoint, total specialization: every created vehicle receives exactly one subtype in the same transaction. The `bus_vehicle` mapping keeps the academic operational BUS identifiers separate from EER vehicles. Metro schedules use metro vehicles and may leave `bus_no` null.
 
-## Operations workflow
-
-Admin and staff can inspect the unified fleet, dedicated metro registry, routes/stops, schedules, employees, agents, and sales. The schedule extension keeps the original academic columns while adding optional `vehicle_id` for metro. Schedule conflict logic compares the route duration against overlapping vehicle, bus, and driver assignments. The schema preserves dynamic per-schedule driver assignments as a practical extension of the assignment's fixed BUS-to-employee assumption.
-
-## SQL workbench
-
-Sign in and open `/dashboard/sql-workbench`. It is a real server endpoint (`POST /api/sql/execute`) against the same `DATABASE_PATH`. The workbench provides 24+ query examples, a schema explorer using `sqlite_master` and `PRAGMA` metadata, query history, execution time, row count, truncation indicator, CSV export, and keyboard shortcut Ctrl+Enter.
-
-Normal users get a read-only SQLite connection. Write statements, `ATTACH`, `DETACH`, `VACUUM`, `PRAGMA`, extension loading, and authentication-table access are blocked server-side. The endpoint uses a validated metadata object list before interpolating a table name for schema inspection. An empty result set is reported as a successful query with zero rows.
-
-## Database architecture
-
-`database/schema.sql` is the authoritative SQLite schema. `database/seed.sql` contains the academic tuples and the base illustrative catalog. `scripts/seed-db.js` adds 50 future schedules, 30 bookings, tickets, payments, pass purchases, and seeded accounts. Dates for generated services use SQLite `date('now', ...)`, so a fresh seed stays usable in the future.
-
-The academic mapping uses snake_case physical identifiers:
-
-| DA name | SQLite relation |
-|---|---|
-| EMPLOYEE | `employee` |
-| BUS | `bus` |
-| ROUTE | `route` |
-| AGENT | `agent` |
-| SCHEDULE | `schedule` |
-| TICKET | `ticket` |
-| CITIES_TOWN | `cities_town` |
-| ROUTE_CITY | `route_city` |
-| SALES_LIST | `sales_list` |
-
-Currency in new transactional relations is integer minor units (`amount`, `total_fare_minor`, `price_minor`). The academic `sales_list.price` and original-style attributes remain present and are documented as assignment-compatible numeric values.
-
-## Academic model and normalization
-
-The ER module preserves employee, bus, route, agent, schedule, ticket, city, and sales relationships. The EER module shows `VEHICLE` as the superclass and `BUS`, `MINI_BUS`, `METRO_TRAIN` as shared-primary-key subtypes. The working implementation assumes disjoint, total specialization because the sketch does not unambiguously specify disjoint/overlapping or total/partial.
-
-For the original `SALES_LIST(Agent_Name, Sales_Date, Price, Emp_No)`, the key is `(Agent_Name, Sales_Date)`, but `Agent_Name -> Emp_No`. This is a partial dependency, so the original relation violates 2NF and consequently is not in 3NF or BCNF. The implemented normalized design stores `Emp_No` in `AGENT` and uses `SALES_LIST(Agent_Name, Sales_Date, Price)`, with `sales_list_original_view` for compatibility.
-
-The assignment's schedule note `Schedule_ID -> Bus_No` and `Bus_No -> Emp_No` implies a transitive dependency and therefore a 3NF/BCNF issue in the original academic interpretation. The app keeps `schedule.emp_no` as an explicit per-service extension for realistic driver changes, validates conflicts transactionally, and does not silently relabel the original assumption.
+The assignment's schedule observation `Schedule_ID -> Bus_No` and `Bus_No -> Emp_No` is documented as a transitive-dependency issue under its fixed bus-driver assumption. The runtime keeps `schedule.emp_no` for time-dependent driver assignment and validates overlapping vehicle/bus/driver allocations transactionally; this is an explicit operational extension.
 
 See `docs/DBMS_REPORT.md`, `docs/SCHEMA_REFERENCE.md`, `docs/ER_DIAGRAM.md`, `docs/EER_DIAGRAM.md`, and `docs/SQL_QUERIES.md`.
 
+## SQL workbench
+
+Sign in and open `/dashboard/sql-workbench`. It executes read-only PostgreSQL `SELECT`/read-only CTE queries against the same Supabase database connection as the rest of the app. It includes schema explorer, PostgreSQL metadata, query examples, keyboard shortcut Ctrl+Enter, execution time, row count, truncation, query history, CSV export, and result preview.
+
+The endpoint blocks writes, transaction-control commands, `ATTACH`/file-style operations, extension loading, and authentication/audit tables. Metadata identifiers are checked against the public schema allowlist before interpolation. Empty result sets remain successful and expose columns where PostgreSQL supplies result metadata.
+
 ## Security and integrity
 
-- Foreign keys are enabled on every connection; WAL and a busy timeout are enabled.
-- Prepared statements are used for application CRUD and all user-controlled values.
-- Zod validates request payloads.
-- Bcrypt hashes passwords; sessions are HTTP-only cookies, not localStorage.
-- Booking, cancellation, registration, seeding, pass purchases, and schedule allocation use transactions where multi-step consistency matters.
-- Seats are unique only while tickets are valid; metro capacity is capacity-based without numbered seats.
-- Parent records used by history/bookings are not casually deleted; status fields and foreign-key actions protect historical data.
+- PostgreSQL foreign keys, composite keys, unique indexes, check constraints, and subtype triggers are defined in `database/schema.sql`.
+- User input is validated with Zod and passed as parameters; identifiers are allowlisted before interpolation.
+- Passwords are bcrypt hashes. Session tokens are HTTP-only cookies and are never stored in localStorage.
+- Booking, cancellation, registration, pass purchase, and seed workflows use database transactions.
+- Seat uniqueness applies only to valid tickets. Metro capacity is capacity-based and does not require numbered seats.
+- No real card, CVV, banking password, gateway, GPS feed, or external API is used.
 
-## Known limitations and future scope
+## Tests
 
-This is a local academic application: simulated payments only, no live GPS, no real payment gateway, no real-time vehicle telemetry, and no external transit API. The admin CRUD screens currently emphasize relational inspection and safe operational visibility; a next iteration can add polished inline forms for every relation, but the underlying schema, APIs, validation, and transactional services are already structured for those forms.
+Tests are integration tests against a separate Supabase database when `SUPABASE_TEST_DB_URL` is configured. Without that variable, the suite runs a clear prerequisite smoke test and skips destructive integration tests; it never creates or touches a local database file. The integration suite covers foreign keys, primary/composite keys, ordered stops, reverse-direction rejection, schedule conflicts, booking persistence, duplicate seats, rollback, cancellation, and the normalized sales view.
+
+## Known limitations
+
+Payments are simulated; schedules and routes are illustrative; live GPS, external transit APIs, and real gateway processing are intentionally absent. CRUD pages currently emphasize relational inspection and safe operations; the existing services and schema are structured for further form endpoints.
 
 ## Troubleshooting
 
-- If `data/transit.db` is missing: run `npm run db:init` and `npm run db:seed`.
-- If seed data looks stale: run `npm run db:reset` followed by `npm run db:seed`.
-- If native SQLite install fails on a new Node version: use Node 20 LTS and run `npm install` again.
-- If a query returns no rows, confirm the date is future relative to the local machine and inspect `schedule` in the workbench.
-
-## Screenshots
-
-The application is intentionally runnable instead of shipping invented screenshots. Start the dev server and use the public landing page, passenger dashboard, operations pages, and SQL workbench as the current source of truth.
+- `SUPABASE_DB_URL is not configured`: copy `.env.example` to `.env` and set the Supabase Connect URL.
+- Connection timeout: verify the project is active, the password is correct, and use the Session Pooler connection string.
+- Seed conflict: rerun `npm run db:seed`; it is conflict-safe. For a clean demo database, use the explicit reset confirmation.
+- No future services: rerun `npm run db:seed`; generated schedule dates are relative to the seed execution date.

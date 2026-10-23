@@ -7,9 +7,9 @@ import { loginSchema } from '@/lib/validation';
 export async function POST(request: Request) {
   try {
     const values = loginSchema.parse(await request.json());
-    const user = getDb().prepare('SELECT * FROM app_user WHERE email=? AND status=\'ACTIVE\'').get(values.email.toLowerCase()) as { user_id:string; password_hash:string } | undefined;
+    const user = await getDb().prepare('SELECT * FROM app_user WHERE email=? AND status=\'ACTIVE\'').get<{ user_id:string; password_hash:string }>(values.email.toLowerCase());
     if (!user || !bcrypt.compareSync(values.password, user.password_hash)) return NextResponse.json({ error: 'Email or password is incorrect.' }, { status: 401 });
-    createSession(user.user_id);
+    await createSession(user.user_id);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to sign in.' }, { status: 400 });

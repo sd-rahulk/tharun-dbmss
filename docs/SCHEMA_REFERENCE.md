@@ -1,6 +1,6 @@
-# SQLite Schema Reference
+# Supabase PostgreSQL Schema Reference
 
-All tables use SQLite-compatible `TEXT`, `INTEGER`, and `NUMERIC` types. ISO dates/times use `TEXT`. Modern currency fields use integer minor units unless they are the assignment-compatible `sales_list.price`.
+The authoritative runtime schema is PostgreSQL in Supabase. Academic dates/times remain ISO-compatible `TEXT` values for recognizable assignment attributes. Modern currency fields use integer minor units unless they are the assignment-compatible `sales_list.price`.
 
 ## Original DA relations
 
@@ -72,15 +72,15 @@ Each uses `vehicle_id TEXT PK/FK -> vehicle.vehicle_id ON DELETE CASCADE`. `vehi
 
 ### fare_payment
 
-`payment_id TEXT PK`, `trip_id TEXT UNIQUE FK`, `booking_id INTEGER FK`, `amount INTEGER CHECK(>=0)`, `payment_method`, `payment_status`, `paid_at`, `transaction_reference UNIQUE`.
+`payment_id TEXT PK`, `trip_id TEXT UNIQUE FK`, `booking_id BIGINT FK`, `amount INTEGER CHECK(>=0)`, `payment_method`, `payment_status`, `paid_at`, `transaction_reference UNIQUE`.
 
 ## Application extensions
 
 `bus_vehicle(bus_no PK/FK, vehicle_id UNIQUE/FK)` maps academic operational buses to EER BUS vehicles.
 
-`passenger_booking(booking_id PK, booking_reference UNIQUE, passenger_id FK, schedule_id FK, boarding_city_id FK, destination_city_id FK, quantity CHECK(>0), total_fare_minor CHECK, status, timestamps)` stores reservation state.
+`passenger_booking(booking_id BIGINT identity PK, booking_reference UNIQUE, passenger_id FK, schedule_id FK, boarding_city_id FK, destination_city_id FK, quantity CHECK(>0), total_fare_minor CHECK, status, timestamps)` stores reservation state.
 
-`booking_ticket(ticket_id PK, ticket_number UNIQUE, booking_id FK, passenger_id FK, schedule_id FK, seat_number, status)` stores issued tickets. A partial unique index prevents duplicate active seats per schedule; metro seat numbers may be NULL.
+`booking_ticket(ticket_id BIGINT identity PK, ticket_number UNIQUE, booking_id FK, passenger_id FK, schedule_id FK, seat_number, status)` stores issued tickets. A partial unique index prevents duplicate active seats per schedule; metro seat numbers may be NULL.
 
 `app_user(user_id PK, email UNIQUE, password_hash, role, passenger_id UNIQUE FK, agent_name UNIQUE FK, display_name, status, created_at)` stores local accounts. `session(session_token_hash PK, user_id FK, expires_at)` stores server sessions. `service_alert`, `notification`, `audit_log`, and `fare_rule` support truthful application features and operational traceability.
 

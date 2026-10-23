@@ -9,18 +9,18 @@ export async function POST(request: Request) {
   try {
     const values = registerSchema.parse(await request.json());
     const db = getDb();
-    const create = db.transaction(() => {
+    const create = async () => db.transaction(async (tx) => {
       const passengerId = `P-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
       const userId = `USR-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-      db.prepare('INSERT INTO passenger (passenger_id, name, gender, phone) VALUES (?, ?, ?, ?)').run(passengerId, values.name, values.gender, values.phone);
-      db.prepare('INSERT INTO app_user (user_id, email, password_hash, role, passenger_id, display_name) VALUES (?, ?, ?, \'PASSENGER\', ?, ?)').run(userId, values.email.toLowerCase(), bcrypt.hashSync(values.password, 10), passengerId, values.name);
+      await tx.prepare('INSERT INTO passenger (passenger_id, name, gender, phone) VALUES (?, ?, ?, ?)').run(passengerId, values.name, values.gender, values.phone);
+      await tx.prepare('INSERT INTO app_user (user_id, email, password_hash, role, passenger_id, display_name) VALUES (?, ?, ?, \'PASSENGER\', ?, ?)').run(userId, values.email.toLowerCase(), bcrypt.hashSync(values.password, 10), passengerId, values.name);
       return userId;
     });
-    const userId = create();
-    createSession(String(userId));
+    const userId = await create();
+    await createSession(String(userId));
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error && error.message.includes('UNIQUE') ? 'An account with that email or phone already exists.' : 'Registration could not be completed.';
+    const message = error instanceof Error && /UNIQUE|duplicate key/i.test(error.message) ? 'An account with that email or phone already exists.' : 'Registration could not be completed.';
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
