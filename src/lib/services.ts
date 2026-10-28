@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getDb, type SupabaseDatabase } from './db';
+import { getDb, type FirebaseDatabase } from './db';
 import { bookingSchema, searchSchema } from './validation';
 
 function asDate(date: string, time: string) {
@@ -27,7 +27,7 @@ export async function searchJourneys(input: unknown) {
       v.subtype, c1.bus_stop AS boarding_stop, c2.bus_stop AS destination_stop,
       rc1.stop_sequence AS boarding_sequence, rc2.stop_sequence AS destination_sequence,
       COALESCE(fr.base_fare_minor, 0) + COALESCE(fr.per_stop_minor, 0) * (rc2.stop_sequence - rc1.stop_sequence) AS fare_minor,
-      v.capacity - COALESCE((SELECT COUNT(*) FROM booking_ticket bt WHERE bt.schedule_id=s.schedule_id AND bt.status='VALID'), 0) AS remaining_capacity
+      COALESCE(v.capacity, b.seat) - COALESCE((SELECT COUNT(*) FROM booking_ticket bt WHERE bt.schedule_id=s.schedule_id AND bt.status='VALID'), 0) AS remaining_capacity
     FROM schedule s
     JOIN route r ON r.route_id=s.route_id
     JOIN route_city rc1 ON rc1.route_id=r.route_id AND rc1.city_id=@from
@@ -47,7 +47,7 @@ export async function findScheduleConflict(input: { scheduleId?: string; departu
   if (!route) throw new Error('Route does not exist.');
   const candidates = await db.prepare(`SELECT s.schedule_id, s.departure_date, s.departure_time, s.vehicle_id, s.bus_no, s.emp_no, r.duration
     FROM schedule s JOIN route r ON r.route_id=s.route_id
-    WHERE s.status='SCHEDULED' AND s.departure_date BETWEEN (?::date - INTERVAL '1 day') AND (?::date + INTERVAL '1 day')`).all(input.departureDate, input.departureDate) as Array<{schedule_id:string;departure_date:string;departure_time:string;vehicle_id:string|null;bus_no:string|null;emp_no:string;duration:number}>;
+    WHERE s.status='SCHEDULED'`).all() as Array<{schedule_id:string;departure_date:string;departure_time:string;vehicle_id:string|null;bus_no:string|null;emp_no:string;duration:number}>;
   const start = asDate(input.departureDate, input.departureTime);
   return candidates.find((candidate) => candidate.schedule_id !== input.scheduleId &&
     (candidate.vehicle_id === input.vehicleId || (candidate.bus_no && candidate.bus_no === input.busNo) || candidate.emp_no === input.empNo) &&
@@ -58,7 +58,7 @@ export async function createBooking(input: unknown) {
   const values = bookingSchema.parse(input);
   const db = getDb();
   const bookingReference = `BK-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-  return await db.transaction(async (tx: SupabaseDatabase) => {
+  return await db.transaction(async (tx: FirebaseDatabase) => {
     const schedule = await tx.prepare(`SELECT s.*, r.duration, r.mode, COALESCE(v.capacity, b.seat) AS capacity, v.subtype
       FROM schedule s JOIN route r ON r.route_id=s.route_id LEFT JOIN vehicle v ON v.vehicle_id=s.vehicle_id
       LEFT JOIN bus b ON b.bus_no=s.bus_no

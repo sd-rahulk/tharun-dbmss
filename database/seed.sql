@@ -1,3 +1,4 @@
+-- Firestore seed source consumed by scripts/seed-db.js; this is not executed as SQL.
 -- Academic identifiers are illustrative, corrected for valid foreign keys,
 -- and kept separate from the generated future demo rows in seed-db.js.
 INSERT INTO employee (emp_no, emp_name, emp_address, emp_role) VALUES

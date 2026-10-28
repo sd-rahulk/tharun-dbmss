@@ -1,28 +1,32 @@
-const path = require('node:path');
-const postgres = require('postgres');
+const { getFirebaseDb, collections } = require('./firebase-admin');
 
-const connectionString = process.env.SUPABASE_DB_URL;
-if (!connectionString) {
-  throw new Error('SUPABASE_DB_URL is required.');
-}
-if (process.env.CONFIRM_SUPABASE_RESET !== 'YES') {
-  throw new Error('This resets the shared Supabase public schema. Set CONFIRM_SUPABASE_RESET=YES to continue.');
+if (process.env.CONFIRM_FIREBASE_RESET !== 'YES') {
+  throw new Error('This deletes the transit collections in Firebase. Set CONFIRM_FIREBASE_RESET=YES to continue.');
 }
 
-const sql = postgres(connectionString, { prepare: false, ssl: 'require', max: 1 });
+async function deleteCollection(db, name) {
+  const snapshot = await db.collection(name).get();
+  let batch = db.batch();
+  let count = 0;
+  for (const doc of snapshot.docs) {
+    batch.delete(doc.ref);
+    count += 1;
+    if (count % 400 === 0) {
+      await batch.commit();
+      batch = db.batch();
+    }
+  }
+  if (count % 400 !== 0) await batch.commit();
+  return count;
+}
 
 (async () => {
-  try {
-    await sql`DROP SCHEMA public CASCADE`;
-    await sql`CREATE SCHEMA public`;
-    await sql`GRANT ALL ON SCHEMA public TO postgres`;
-    await sql`GRANT ALL ON SCHEMA public TO public`;
-    await sql.file(path.join(process.cwd(), 'database', 'schema.sql'));
-    console.log('Supabase public schema reset and recreated. Run npm run db:seed next.');
-  } finally {
-    await sql.end({ timeout: 2 });
-  }
+  const db = getFirebaseDb();
+  let total = 0;
+  for (const name of collections) total += await deleteCollection(db, name);
+  console.log(`Deleted ${total} documents from the Firebase transit collections.`);
+  console.log('Run npm run db:seed to restore the academic and illustrative demo data.');
 })().catch((error) => {
-  console.error('Supabase reset failed:', error.message);
+  console.error('Firebase reset failed:', error.message);
   process.exitCode = 1;
 });

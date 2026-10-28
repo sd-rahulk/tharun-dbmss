@@ -1,0 +1,12 @@
+{
+  "database": "Firebase Firestore",
+  "sourceOfTruth": "src/lib/db.ts",
+  "collections": [
+    "employee", "bus", "route", "agent", "vehicle_type", "vehicle", "vehicle_bus", "mini_bus", "metro_train", "bus_vehicle", "schedule", "cities_town", "route_city", "ticket", "sales_list", "fare_rule", "passenger", "transit_pass", "pass_purchase", "trip", "trip_passenger", "passenger_booking", "booking_ticket", "fare_payment", "app_user", "session", "service_alert", "notification", "audit_log"
+  ],
+  "notes": [
+    "Firestore is schema-flexible; this file documents the application contract.",
+    "Composite academic keys are represented by deterministic document IDs while original key fields remain in documents.",
+    "Foreign-key-style references and uniqueness are validated by the server adapter and transactional services."
+  ]
+}

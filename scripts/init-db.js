@@ -1,21 +1,11 @@
-const path = require('node:path');
-const postgres = require('postgres');
-
-const connectionString = process.env.SUPABASE_DB_URL;
-if (!connectionString) {
-  throw new Error('SUPABASE_DB_URL is required. Copy .env.example and paste the Supabase Connect connection string.');
-}
-
-const sql = postgres(connectionString, { prepare: false, ssl: 'require', max: 1 });
+const { getFirebaseDb, collections } = require('./firebase-admin');
 
 (async () => {
-  try {
-    await sql.file(path.join(process.cwd(), 'database', 'schema.sql'));
-    console.log('Supabase PostgreSQL schema initialized.');
-  } finally {
-    await sql.end({ timeout: 2 });
-  }
+  const db = getFirebaseDb();
+  await Promise.all(collections.map((name) => db.collection(name).limit(1).get()));
+  console.log(`Firebase Firestore is ready for project ${process.env.FIREBASE_PROJECT_ID || '(from credentials)'}.`);
+  console.log('Firestore is schema-flexible; collection contracts are documented in database/firestore-schema.json.');
 })().catch((error) => {
-  console.error('Supabase schema initialization failed:', error.message);
+  console.error('Firebase initialization failed:', error.message);
   process.exitCode = 1;
 });

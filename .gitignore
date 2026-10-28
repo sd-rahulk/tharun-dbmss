@@ -4,5 +4,5 @@ node_modules
 coverage
 .DS_Store
 
-# Legacy local database artifacts are not used by the Supabase runtime.
+# Legacy local database artifacts are not used by the Firebase runtime.
 data/

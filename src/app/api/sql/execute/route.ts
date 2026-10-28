@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ success: false, error: 'Sign-in required.' }, { status: 401 });
   const body = await request.json() as { sql?: string };
   const sql = body.sql?.trim() || '';
-  if (!sql) return NextResponse.json({ success: false, error: 'Enter a PostgreSQL query.' }, { status: 400 });
+  if (!sql) return NextResponse.json({ success: false, error: 'Enter a Firestore query.' }, { status: 400 });
   if (sql.includes(';') && sql.replace(/;\s*$/, '').includes(';')) return NextResponse.json({ success: false, error: 'Run one statement at a time.' }, { status: 400 });
   if (forbidden.test(sql)) return NextResponse.json({ success: false, error: 'The workbench is read-only. Write statements and database configuration commands are blocked.' }, { status: 403 });
   if (restricted.test(sql)) return NextResponse.json({ success: false, error: 'Authentication and audit tables are restricted in the default workbench mode.' }, { status: 403 });
@@ -29,6 +29,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ success: true, ...payload, executionTimeMs: Math.round(performance.now() - started) });
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'PostgreSQL query failed.', executionTimeMs: Math.round(performance.now() - started) }, { status: 400 });
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Firestore query failed.', executionTimeMs: Math.round(performance.now() - started) }, { status: 400 });
   }
 }

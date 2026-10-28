@@ -1,124 +1,37 @@
-# Executable Supabase PostgreSQL Queries
+# Firestore-backed SQL Workbench Queries
 
-These queries run in `/dashboard/sql-workbench` against the same Supabase PostgreSQL database used by the application.
-
-## Academic relations and normalization
+These queries run in `/dashboard/sql-workbench` against the same Firebase Firestore project used by the application. They are SQL compatibility queries evaluated server-side over Firestore collection snapshots. Use them for demonstrations and academic analysis; application writes must use the service layer.
 
 ```sql
 SELECT * FROM employee;
 SELECT * FROM bus;
-SELECT * FROM route;
-SELECT * FROM agent;
-SELECT * FROM schedule;
-SELECT * FROM ticket;
-SELECT * FROM cities_town;
-SELECT * FROM route_city ORDER BY route_id, stop_sequence;
+SELECT b.bus_no, b.seat, e.emp_name FROM bus b LEFT JOIN employee e ON b.emp_no=e.emp_no;
+SELECT s.schedule_id, s.departure_date, s.departure_time, r.route_description, b.bus_no FROM schedule s JOIN route r ON s.route_id=r.route_id LEFT JOIN bus b ON s.bus_no=b.bus_no;
+SELECT t.ticket_number, t.schedule_id, a.agent_name, a.location FROM ticket t JOIN agent a ON t.agent_name=a.agent_name;
+SELECT r.route_id, r.route_description, c.bus_stop, rc.stop_sequence FROM route r JOIN route_city rc ON r.route_id=rc.route_id JOIN cities_town c ON rc.city_id=c.city_id ORDER BY r.route_id, rc.stop_sequence;
+SELECT agent_name, SUM(price) AS total_sales FROM sales_list GROUP BY agent_name;
 SELECT * FROM sales_list;
-SELECT * FROM sales_list_original_view;
+SELECT r.route_id, r.route_description, COUNT(s.schedule_id) AS schedule_count FROM route r LEFT JOIN schedule s ON r.route_id=s.route_id GROUP BY r.route_id, r.route_description;
+SELECT v.vehicle_id, v.reg_no, vt.type_name, vb.engine_type, mb.ac_non_ac, mt.no_of_coaches FROM vehicle v JOIN vehicle_type vt ON v.type_id=vt.type_id LEFT JOIN vehicle_bus vb ON v.vehicle_id=vb.vehicle_id LEFT JOIN mini_bus mb ON v.vehicle_id=mb.vehicle_id LEFT JOIN metro_train mt ON v.vehicle_id=mt.vehicle_id;
+SELECT p.passenger_id, p.name, b.booking_reference, s.departure_date, s.departure_time FROM passenger p JOIN passenger_booking b ON b.passenger_id=p.passenger_id JOIN schedule s ON s.schedule_id=b.schedule_id ORDER BY s.departure_date, s.departure_time;
+SELECT s.schedule_id, COALESCE(v.capacity,b.seat) - COUNT(bt.ticket_id) AS remaining_capacity FROM schedule s LEFT JOIN vehicle v ON v.vehicle_id=s.vehicle_id LEFT JOIN bus b ON b.bus_no=s.bus_no LEFT JOIN booking_ticket bt ON bt.schedule_id=s.schedule_id AND bt.status='VALID' GROUP BY s.schedule_id, v.capacity, b.seat;
+SELECT schedule_id, COUNT(*) AS tickets FROM booking_ticket WHERE status='VALID' GROUP BY schedule_id;
+SELECT DATE(paid_at) AS payment_day, SUM(amount) AS daily_revenue FROM fare_payment WHERE payment_status='SUCCESS' GROUP BY DATE(paid_at) ORDER BY payment_day;
+SELECT pp.passenger_id, pp.pass_id, pp.valid_until FROM pass_purchase pp WHERE pp.status='ACTIVE' AND pp.valid_until >= CURRENT_DATE;
+SELECT v.vehicle_id, v.capacity, mt.no_of_coaches FROM vehicle v JOIN metro_train mt ON mt.vehicle_id=v.vehicle_id;
+SELECT r.route_id, r.route_description FROM route r JOIN route_city rc ON rc.route_id=r.route_id WHERE rc.city_id='C017';
+SELECT s.schedule_id FROM schedule s LEFT JOIN passenger_booking b ON b.schedule_id=s.schedule_id WHERE b.booking_id IS NULL;
+SELECT emp_no, COUNT(*) AS schedule_count FROM schedule GROUP BY emp_no HAVING COUNT(*) > 1;
+SELECT payment_method, payment_status, COUNT(*) AS payment_count, SUM(amount) AS total_amount FROM fare_payment GROUP BY payment_method, payment_status;
+SELECT Agent_Name, Sales_Date, Price, Emp_No FROM sales_list_original_view;
+SELECT Agent_Name, Sales_Date, Price, Emp_No, 'Emp_No depends on Agent_Name alone' AS normalization_note FROM sales_list_original_view;
+SELECT r.mode, COUNT(b.booking_id) AS bookings FROM route r JOIN schedule s ON s.route_id=r.route_id JOIN passenger_booking b ON b.schedule_id=s.schedule_id GROUP BY r.mode;
+SELECT r.route_id, SUM(fp.amount) AS revenue FROM fare_payment fp JOIN passenger_booking pb ON pb.booking_id=fp.booking_id JOIN schedule s ON s.schedule_id=pb.schedule_id JOIN route r ON r.route_id=s.route_id WHERE fp.payment_status='SUCCESS' GROUP BY r.route_id;
+SELECT status, COUNT(*) AS ticket_count FROM booking_ticket GROUP BY status;
+SELECT * FROM service_alert WHERE active_from <= CURRENT_DATE AND (active_until IS NULL OR active_until >= CURRENT_DATE);
+SELECT e.emp_no, e.emp_name, b.bus_no FROM employee e LEFT JOIN bus b ON b.emp_no=e.emp_no ORDER BY e.emp_no;
+SELECT r.route_id, GROUP_CONCAT(c.bus_stop, ' -> ') AS ordered_stops FROM route r JOIN route_city rc ON rc.route_id=r.route_id JOIN cities_town c ON c.city_id=rc.city_id GROUP BY r.route_id;
+SELECT a.agent_name, SUM(s.price) AS total_sales FROM agent a LEFT JOIN sales_list s ON s.agent_name=a.agent_name GROUP BY a.agent_name;
 ```
 
-```sql
-SELECT b.bus_no, b.seat, e.emp_name
-FROM bus b LEFT JOIN employee e ON e.emp_no=b.emp_no;
-
-SELECT s.schedule_id, s.departure_date, s.departure_time,
-       r.route_description, b.bus_no
-FROM schedule s JOIN route r ON r.route_id=s.route_id
-LEFT JOIN bus b ON b.bus_no=s.bus_no;
-
-SELECT r.route_id, r.route_description, c.bus_stop, rc.stop_sequence
-FROM route r JOIN route_city rc ON rc.route_id=r.route_id
-JOIN cities_town c ON c.city_id=rc.city_id
-ORDER BY r.route_id, rc.stop_sequence;
-
-SELECT agent_name, SUM(price) AS total_sales
-FROM sales_list GROUP BY agent_name;
-
-SELECT agent_name, sales_date, price, emp_no
-FROM sales_list_original_view ORDER BY agent_name, sales_date;
-```
-
-## Aggregation, transit, and bookings
-
-```sql
-SELECT r.route_id, r.route_description, COUNT(s.schedule_id) AS schedule_count
-FROM route r LEFT JOIN schedule s ON s.route_id=r.route_id
-GROUP BY r.route_id, r.route_description;
-
-SELECT v.vehicle_id, v.reg_no, vt.type_name, vb.engine_type,
-       mb.ac_non_ac, mt.no_of_coaches
-FROM vehicle v JOIN vehicle_type vt ON vt.type_id=v.type_id
-LEFT JOIN vehicle_bus vb ON vb.vehicle_id=v.vehicle_id
-LEFT JOIN mini_bus mb ON mb.vehicle_id=v.vehicle_id
-LEFT JOIN metro_train mt ON mt.vehicle_id=v.vehicle_id;
-
-SELECT p.name, t.trip_id, t.travel_date, r.route_description, v.subtype
-FROM passenger p JOIN trip_passenger tp ON tp.passenger_id=p.passenger_id
-JOIN trip t ON t.trip_id=tp.trip_id JOIN schedule s ON s.schedule_id=t.schedule_id
-JOIN route r ON r.route_id=s.route_id LEFT JOIN vehicle v ON v.vehicle_id=s.vehicle_id;
-
-SELECT s.schedule_id, v.capacity,
-       v.capacity - COUNT(bt.ticket_id) FILTER (WHERE bt.status='VALID') AS remaining_capacity
-FROM schedule s JOIN vehicle v ON v.vehicle_id=s.vehicle_id
-LEFT JOIN booking_ticket bt ON bt.schedule_id=s.schedule_id
-GROUP BY s.schedule_id, v.capacity;
-
-SELECT schedule_id, COUNT(*) AS tickets
-FROM booking_ticket WHERE status='VALID'
-GROUP BY schedule_id ORDER BY tickets DESC;
-
-SELECT paid_at::date AS sales_day, SUM(amount) AS revenue_minor
-FROM fare_payment WHERE payment_status='SUCCESS'
-GROUP BY paid_at::date ORDER BY sales_day;
-
-SELECT p.name, tp.pass_type, pp.valid_from, pp.valid_until
-FROM pass_purchase pp JOIN passenger p ON p.passenger_id=pp.passenger_id
-JOIN transit_pass tp ON tp.pass_id=pp.pass_id
-WHERE pp.status='ACTIVE' AND CURRENT_DATE::text BETWEEN pp.valid_from AND pp.valid_until;
-
-SELECT v.vehicle_id, v.reg_no, v.capacity, mt.no_of_coaches
-FROM vehicle v JOIN metro_train mt ON mt.vehicle_id=v.vehicle_id;
-
-SELECT r.route_id, r.route_description
-FROM route r JOIN route_city rc ON rc.route_id=r.route_id
-WHERE rc.city_id='C017';
-
-SELECT s.schedule_id, s.departure_date, s.departure_time
-FROM schedule s
-WHERE NOT EXISTS (SELECT 1 FROM booking_ticket bt
-  WHERE bt.schedule_id=s.schedule_id AND bt.status='VALID');
-
-SELECT e.emp_no, e.emp_name, COUNT(s.schedule_id) AS schedule_count
-FROM employee e JOIN schedule s ON s.emp_no=e.emp_no
-GROUP BY e.emp_no, e.emp_name HAVING COUNT(s.schedule_id)>1;
-
-SELECT payment_method, payment_status, COUNT(*) AS payments, SUM(amount) AS total_minor
-FROM fare_payment GROUP BY payment_method, payment_status;
-```
-
-## Normalization and metadata
-
-```sql
-SELECT agent_name, sales_date, price, emp_no
-FROM sales_list_original_view;
--- Key: (Agent_Name, Sales_Date); Agent_Name -> Emp_No is partial in the original.
-
-SELECT table_name AS name, 'table' AS type
-FROM information_schema.tables WHERE table_schema='public'
-UNION ALL
-SELECT table_name AS name, 'view' AS type
-FROM information_schema.views WHERE table_schema='public'
-ORDER BY type, name;
-
-SELECT column_name, data_type, is_nullable
-FROM information_schema.columns
-WHERE table_schema='public' AND table_name='route_city'
-ORDER BY ordinal_position;
-
-SELECT indexname, indexdef FROM pg_indexes
-WHERE schemaname='public' AND tablename='booking_ticket';
-```
-
-## Revenue source policy
-
-`sales_list` is the academic daily agent relation and must not be added to granular payment totals. Transactional revenue uses successful `fare_payment` rows. This avoids double-counting and makes the source of each metric explicit.
+The normalization example is intentionally explanatory: the original academic relation contains `Emp_No`, while the normalized runtime `sales_list` stores only `(agent_name, sales_date, price)` and gets the employee assignment through `agent`.
